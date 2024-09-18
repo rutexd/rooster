@@ -11,7 +11,13 @@ readme = "README.md"
 edition = "2018"
 
 [features]
+default = ["gui", "serde"] # debug 
 serde = []
+gui = [
+    "dep:crossterm", 
+    "dep:ratatui", 
+    "dep:tui-textarea"
+]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -22,14 +28,28 @@ byteorder = "1.4"
 clipboard = "0.5"
 dirs = "5.0"
 aes = "0.8"
-windows = { version = "0.52", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_System_WindowsProgramming"] }
-cbc = {  version = "0.1", features = ["std"] }
-scrypt = {  version = "0.11", default-features = false }
+windows = { version = "0.52", features = [
+    "Win32_Storage_FileSystem",
+    "Win32_Foundation",
+    "Win32_System_WindowsProgramming",
+] }
+
+cbc = { version = "0.1", features = ["std"] }
+scrypt = { version = "0.11", default-features = false }
 hmac = "0.12"
 sha2 = "0.10"
 ansi_term = "0.12"
 clap = "4.0"
 csv = "1.1"
 tempfile = "3.2"
-rclio = { path = "../rclio", version = "0.0" }
-rtoolbox = { path = "../rtoolbox", features = ["serde"], version = "0.0" }
+# rclio = { path = "../rclio", version = "0.0" }
+# rtoolbox = { path = "../rtoolbox", features = ["serde"], version = "0.0" }
+rclio = { version = "0.0" }
+rtoolbox = { features = ["serde"], version = "0.0" }
+
+ratatui = { version = "0.28", features = [
+    "unstable-widget-ref",
+    "unstable-rendered-line-info",
+], optional = true }
+crossterm = { version = "0.28.1", optional = true }
+tui-textarea = { version = "0.6.1", optional = true }

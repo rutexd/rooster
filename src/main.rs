@@ -43,7 +43,7 @@ fn main() {
             stdin.lock(),
             stdout.lock(),
             stderr.lock(),
-            false,
+            // false,
         ),
         &rooster_file_path,
     ));
