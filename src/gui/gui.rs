@@ -1,7 +1,9 @@
 use std::rc::Rc;
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect}, widgets::{Block, BorderType, Borders, Padding}, Frame
+    layout::{Constraint, Direction, Layout, Rect},
+    widgets::{Block, BorderType, Borders, Padding},
+    Frame,
 };
 
 use crate::gui::tui_app::TuiApp;
@@ -18,12 +20,7 @@ impl<'a> TuiApp<'a> {
                     CurrentState::InputMasterPassword => {
                         [Constraint::Percentage(0), Constraint::Percentage(100)]
                     }
-                    CurrentState::View => [
-                        // Constraint::Percentage(20),
-                        // Constraint::Percentage(80),
-                        Constraint::Length(1),
-                        Constraint::Percentage(100),
-                    ],
+                    CurrentState::View => [Constraint::Length(1), Constraint::Percentage(100)],
                 }
                 .as_ref(),
             )
@@ -54,5 +51,4 @@ impl<'a> TuiApp<'a> {
             ])
             .split(popup_layout[1])[1] // Return the middle chunk
     }
-
 }

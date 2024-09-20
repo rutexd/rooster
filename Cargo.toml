@@ -49,6 +49,7 @@ tempfile = "3.2"
 rclio = { version = "0.0" }
 rtoolbox = { features = ["serde"], version = "0.0" }
 
+# Gui dependencies (optional since can be installed without)
 ratatui = { version = "0.28", features = [
     "unstable-widget-ref",
     "unstable-rendered-line-info",
