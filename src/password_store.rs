@@ -3,6 +3,7 @@ use std::{fs::File, io::Read};
 use rclio::{CliInputOutput, OutputType};
 use rtoolbox::{safe_string::SafeString, safe_vec::SafeVec};
 
+use crate::util::read_file;
 use crate::{password, user_input};
 
 pub fn get_password_store(
@@ -10,8 +11,7 @@ pub fn get_password_store(
     io: &mut impl CliInputOutput,
 ) -> Result<password::v2::PasswordStore, i32> {
     // Read the Rooster file contents.
-    let mut input: SafeVec = SafeVec::new(Vec::new());
-    file.read_to_end(input.inner_mut()).map_err(|_| 1)?;
+    let input = read_file(file)?;
 
     return get_password_store_from_input_interactive(&input, 3, false, false, io).map_err(|_| 1);
 }

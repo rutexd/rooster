@@ -1,6 +1,7 @@
 // #![allow(useless_format, too_many_arguments)]
 
 use crate::password::v2::PasswordStore;
+use clap::ArgMatches;
 use clap::{Arg, ArgAction, Command};
 use rclio::CliInputOutput;
 use rclio::OutputType;
@@ -13,6 +14,7 @@ use std::io::Result as IoResult;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
+mod util;
 mod aes;
 mod clip;
 mod commands;
@@ -419,26 +421,20 @@ pub fn main_with_args(
         }
     };
 
-    
-    if subcommand == "gui" {
-        if !cfg!(feature = "gui") {
-            io.error("GUI feature is not enabled. Please install Rooster with the `gui` feature enabled.", OutputType::Error);
-            return 1;
-        } else {
-            #[cfg(feature = "gui")]
-            match gui::gui::run_gui() {
-                Ok(_) => return 0, // TODO: remove this when the GUI is implemented
-                Err(_) => return 1,
-            }
-        }
-            
-    }
-
-    let mut store = match password_store::get_password_store(&mut file, io) {
-        Err(code) => return code,
-        Ok(store) => store,
+    let mut store = match cfg!(feature = "gui") && subcommand == "gui" {
+        // instead of showing simple input for master password, we will show GUI which would inizialize the store
+        true => match gui::gui_loader::run_gui(&mut file) {
+            Ok(store) => store,
+            Err(_) => return 1,
+        },
+        false => match password_store::get_password_store(&mut file, io) {
+            Err(code) => return code,
+            Ok(store) => store,
+        },
     };
-    
+
+
+   
 
     let callback = match subcommand {
         "get" => commands::get::callback_exec,
@@ -454,6 +450,7 @@ pub fn main_with_args(
         "rename" => commands::rename::callback_exec,
         "transfer" => commands::transfer::callback_exec,
         "change" => commands::change::callback_exec,
+        "gui" => util::empty_callback_exec, // since GUI is handled by a custom loader, we don't need to do anything here
         _ => unreachable!("Validation should have been done by `clap` before"),
     };
 

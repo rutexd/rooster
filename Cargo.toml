@@ -16,7 +16,9 @@ serde = []
 gui = [
     "dep:crossterm", 
     "dep:ratatui", 
-    "dep:tui-textarea"
+    "dep:tui-textarea",
+    "dep:strum",
+    "dep:tui-input",
 ]
 
 [dependencies]
@@ -53,3 +55,5 @@ ratatui = { version = "0.28", features = [
 ], optional = true }
 crossterm = { version = "0.28.1", optional = true }
 tui-textarea = { version = "0.6.1", optional = true }
+strum = { version = "0.26.3", features = ["std", "derive"], optional = true }
+tui-input = { version = "0.10.1", features = ["serde"], optional = true }
