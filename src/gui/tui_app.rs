@@ -331,7 +331,7 @@ impl<'a> TuiApp<'a> {
     }
 
     fn render_passwords_table(&self, frame: &mut Frame) {
-        let area = self.centered_rect(75, 85, frame.area());
+        let area = self.centered_rect(90, 90, frame.area());
 
         let passwords = self.password_store.as_ref().unwrap().get_all_passwords();
         // 30 test passwords
