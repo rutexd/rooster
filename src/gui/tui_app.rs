@@ -31,7 +31,7 @@ pub struct TuiApp<'a> {
     file: &'a mut File,
     password_store: Option<password::v2::PasswordStore>,
 
-    current_menu_item: TabElement,
+    submenu: TabElement,
 
     password_input: Input,
     password_input_active: bool,
@@ -92,9 +92,9 @@ impl<'a> TuiApp<'a> {
             exit: false,
             current_state: CurrentState::InputMasterPassword,
             password_store: None,
-            file,
+            file: file,
 
-            current_menu_item: TabElement::default(),
+            submenu: TabElement::default(),
 
             password_input: Input::default(),
             password_input_active: true,
@@ -104,17 +104,11 @@ impl<'a> TuiApp<'a> {
         }
     }
 
-    pub fn prepare(&mut self) -> Result<(), Error> {
-        Ok(())
-    }
-
     pub fn run(&mut self, terminal: &mut Tui) -> Result<PasswordStore, Error> {
-        self.prepare()?;
         while !self.exit {
             self.preprocess_update()?;
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events()?;
-            self.post_update()?;
         }
         self.on_exit();
 
@@ -135,16 +129,16 @@ impl<'a> TuiApp<'a> {
         let centered_content_rect = self.centered_rect(50, 50, content_rect);
 
         let view_instructions = [
-            "F2: Copy username",
-            "F3: Copy password",
+            "(F2) Copy username",
+            "(F3) Copy password",
         ].join(" | ");
 
         let window = Block::new()
             .title("Rooster password manager")
             .borders(Borders::ALL)
             .title_bottom(match self.current_state {
-                CurrentState::InputMasterPassword => "F1: Show/Hide password",
-                CurrentState::View => match self.current_menu_item {
+                CurrentState::InputMasterPassword => "(F1) Show/Hide password",
+                CurrentState::View => match self.submenu {
                     TabElement::Start => "Instructions",
                     TabElement::View => view_instructions.as_str(),
                     _ => "TODO",
@@ -152,7 +146,7 @@ impl<'a> TuiApp<'a> {
             });
 
         let titles = TabElement::iter().map(|e| Span::styled(e.to_string(), Style::default()));
-        let current = self.current_menu_item as usize;
+        let current = self.submenu as usize;
 
         let menu = Tabs::new(titles)
             .highlight_style(Style::default().fg(Color::White).bg(Color::LightBlue))
@@ -164,7 +158,7 @@ impl<'a> TuiApp<'a> {
                 .visual_scroll(centered_content_rect.width as usize);
             let width = centered_content_rect.width as usize;
 
-            let input = Paragraph::new(
+            let password_input = Paragraph::new(
                 self.password_input
                     .value()
                     .chars()
@@ -189,10 +183,10 @@ impl<'a> TuiApp<'a> {
                 ));
             }
 
-            frame.render_widget(input, centered_content_rect);
+            frame.render_widget(password_input, centered_content_rect);
         }
 
-        if self.current_menu_item == TabElement::View {
+        if self.submenu == TabElement::View {
             self.render_passwords_table(frame);
         }
 
@@ -239,7 +233,7 @@ impl<'a> TuiApp<'a> {
             }
 
             crossterm::event::KeyCode::F(2) => {
-                if self.current_menu_item == TabElement::View {
+                if self.submenu == TabElement::View {
                 
                     let index = self.table_state.selected().unwrap();
                     let username = self.password_store.as_ref().unwrap().get_all_passwords()[index].clone().username;
@@ -251,7 +245,7 @@ impl<'a> TuiApp<'a> {
             }
 
             crossterm::event::KeyCode::F(3) => {
-                if self.current_menu_item == TabElement::View {
+                if self.submenu == TabElement::View {
                     let index = self.table_state.selected().unwrap();
                     let password = self.password_store.as_ref().unwrap().get_all_passwords()[index].clone().password;
                     match clip::copy_to_clipboard(&password) {
@@ -267,24 +261,24 @@ impl<'a> TuiApp<'a> {
 
             crossterm::event::KeyCode::Left => {
                 if self.current_state == CurrentState::View {
-                    self.current_menu_item = self.current_menu_item.prev();
+                    self.submenu = self.submenu.prev();
                 }
             }
 
             crossterm::event::KeyCode::Right => {
                 if self.current_state == CurrentState::View {
-                    self.current_menu_item = self.current_menu_item.next();
+                    self.submenu = self.submenu.next();
                 }
             }
 
             crossterm::event::KeyCode::Up => {
-                if self.current_menu_item == TabElement::View { // add out of bounds check
+                if self.submenu == TabElement::View { // add out of bounds check
                     self.table_state.select_previous();
                 }
             }
 
             crossterm::event::KeyCode::Down => {
-                if self.current_menu_item == TabElement::View { // add out of bounds check
+                if self.submenu == TabElement::View { // add out of bounds check
                     self.table_state.select_next();
                 }
             }
@@ -296,9 +290,6 @@ impl<'a> TuiApp<'a> {
         Ok(())
     }
 
-    fn post_update(&mut self) -> Result<(), Error> {
-        Ok(())
-    }
 
     fn exit(&mut self) {
         self.exit = true;
@@ -331,42 +322,44 @@ impl<'a> TuiApp<'a> {
     }
 
     fn render_passwords_table(&self, frame: &mut Frame) {
-        let area = self.centered_rect(90, 90, frame.area());
+        let area = self.centered_rect(95, 90, frame.area());
 
         let passwords = self.password_store.as_ref().unwrap().get_all_passwords();
+        const ITEM_HEIGHT: usize = 1;
+
         // 30 test passwords
-        // let passwords = vec![
-        //     Password::new("test1", "test1", "test1"),
-        //     Password::new("test2", "test2", "test2"),
-        //     Password::new("test3", "test3", "test3"),
-        //     Password::new("test4", "test4", "test4"),
-        //     Password::new("test5", "test5", "test5"),
-        //     Password::new("test6", "test6", "test6"),
-        //     Password::new("test7", "test7", "test7"),
-        //     Password::new("test8", "test8", "test8"),
-        //     Password::new("test9", "test9", "test9"),
-        //     Password::new("test10", "test10", "test10"),
-        //     Password::new("test11", "test11", "test11"),
-        //     Password::new("test12", "test12", "test12"),
-        //     Password::new("test13", "test13", "test13"),
-        //     Password::new("test14", "test14", "test14"),
-        //     Password::new("test15", "test15", "test15"),
-        //     Password::new("test16", "test16", "test16"),
-        //     Password::new("test17", "test17", "test17"),
-        //     Password::new("test18", "test18", "test18"),
-        //     Password::new("test19", "test19", "test19"),
-        //     Password::new("test20", "test20", "test20"),
-        //     Password::new("test21", "test21", "test21"),
-        //     Password::new("test22", "test22", "test22"),
-        //     Password::new("test23", "test23", "test23"),
-        //     Password::new("test24", "test24", "test24"),
-        //     Password::new("test25", "test25", "test25"),
-        //     Password::new("test26", "test26", "test26"),
-        //     Password::new("test27", "test27", "test27"),
-        //     Password::new("test28", "test28", "test28"),
-        //     Password::new("test29", "test29", "test29"),
-        //     Password::new("test30", "test30", "test30"),
-        // ];
+        let passwords = vec![
+            Password::new("test1", "test1", "test1"),
+            Password::new("test2", "test2", "test2"),
+            Password::new("test3", "test3", "test3"),
+            Password::new("test4", "test4", "test4"),
+            Password::new("test5", "test5", "test5"),
+            Password::new("test6", "test6", "test6"),
+            Password::new("test7", "test7", "test7"),
+            Password::new("test8", "test8", "test8"),
+            Password::new("test9", "test9", "test9"),
+            Password::new("test10", "test10", "test10"),
+            Password::new("test11", "test11", "test11"),
+            Password::new("test12", "test12", "test12"),
+            Password::new("test13", "test13", "test13"),
+            Password::new("test14", "test14", "test14"),
+            Password::new("test15", "test15", "test15"),
+            Password::new("test16", "test16", "test16"),
+            Password::new("test17", "test17", "test17"),
+            Password::new("test18", "test18", "test18"),
+            Password::new("test19", "test19", "test19"),
+            Password::new("test20", "test20", "test20"),
+            Password::new("test21", "test21", "test21"),
+            Password::new("test22", "test22", "test22"),
+            Password::new("test23", "test23", "test23"),
+            Password::new("test24", "test24", "test24"),
+            Password::new("test25", "test25", "test25"),
+            Password::new("test26", "test26", "test26"),
+            Password::new("test27", "test27", "test27"),
+            Password::new("test28", "test28", "test28"),
+            Password::new("test29", "test29", "test29"),
+            Password::new("test30", "test30", "test30"),
+        ];
 
         let header_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
         let selected_style = Style::default()
@@ -379,21 +372,20 @@ impl<'a> TuiApp<'a> {
             .style(header_style)
             .height(1);
         
+        
         let rows = passwords.iter().enumerate().map(|(i, data)| {
-            let color = Color::Black;
-
-            let item = [
+            [
                 data.name.as_str(),
                 data.username.as_str(),
                 data.password.as_str(),
-            ];
-            item.iter()
+            ].iter()
                 .map(|content| Cell::from(Text::from(*content)))
                 .collect::<Row>()
-                .style(Style::new().fg(Color::Gray).bg(color))
-                .height(1) // height example for the row
+                .style(Style::new().fg(Color::Gray).bg(Color::Black))
+                .height(ITEM_HEIGHT as u16) // height example for the row
         });
-        let t = Table::new(
+
+        let table = Table::new(
             rows,
             [
                 Constraint::Percentage(20),
@@ -410,8 +402,28 @@ impl<'a> TuiApp<'a> {
             left: 0,
         }));
         
+        let mut table_state = self.table_state.clone();
+        let mut scroll_state = ScrollbarState::new((passwords.len()-1) * ITEM_HEIGHT);
 
-        let mut state = self.table_state.clone();
-        frame.render_stateful_widget(t, area, &mut state);
+
+        scroll_state = scroll_state.position(table_state.selected().unwrap() * ITEM_HEIGHT);
+
+        frame.render_stateful_widget(table, area, &mut table_state);
+        frame.render_stateful_widget(
+            Scrollbar::default().style(Style::default().fg(Color::Red))
+            .orientation(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None),
+            area.inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            }).offset(Offset {
+                x: 2,
+                y: 1,
+            }),
+            &mut scroll_state,
+        );
+        
+
     }
 }
