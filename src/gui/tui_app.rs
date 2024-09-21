@@ -20,6 +20,7 @@ use tui_input::{backend::crossterm::EventHandler, Input};
 
 use crate::{password::{self}, util};
 use crate::{password::v2::PasswordStore, password_store};
+use crate::gui::widgets::text_input::SimpleTextInput;
 use crate::clip;
 
 
@@ -186,29 +187,14 @@ impl<'a> TuiApp<'a> {
         if self.current_state == CurrentState::InputMasterPassword {
             let centered_content_rect = self.centered_rect(25, 50, content_rect);
 
-            let scroll = self
-                .password_input
-                .visual_scroll(centered_content_rect.width as usize);
             let width = centered_content_rect.width as usize;
+            let password_input = SimpleTextInput::new(
+                "Enter your master password",
+                &self.password_input,
+                self.show_passwords,
+            );
 
-            let password_input = Paragraph::new(
-                self.password_input
-                    .value()
-                    .chars()
-                    .map(|c| if self.show_passwords { c } else { '*' })
-                    .collect::<String>(),
-            )
-            .style(Style::default().fg(Color::Yellow))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Enter your master password")
-                    .style(Style::default().fg(Color::White))
-                    ,
-            )
-            .scroll((0, scroll as u16));
-
-            if self.password_input_active {
+            if self.password_input_active { // TODO somehow incapsulate this into widget
                 frame.set_cursor_position((
                     centered_content_rect.x
                         + 1
