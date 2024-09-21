@@ -130,17 +130,11 @@ impl<'a> TuiApp<'a> {
     pub(crate) fn render_start_screen(&self, frame: &mut Frame) {
         let area = frame.area();
         let text = vec![
-            Text::styled("Welcome to Password Manager", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Text::styled("Rooster password manager", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Text::raw("\n"),
             Text::raw("Use arrows (←, →) to navigate between tabs.\n"),
             Text::raw("You can see hints on the bottom of the tab you are on.\n"),
         ];
-
-        frame.render_widget(
-            Block::default()
-                .title("Password Manager"),
-            area,
-        );
 
         frame.render_widget(
             Table::new(text.iter().map(|t| Row::new(vec![Cell::from(t.clone())]).height(1)), vec![Constraint::Percentage(100)]).block(Block::default()),

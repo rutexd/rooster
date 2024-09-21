@@ -40,6 +40,10 @@ pub struct TuiApp<'a> {
     password_input_show: bool,
 
     pub(crate) table_state: TableState,
+
+    pub(crate) show_popup: bool,
+    pub(crate) popup_text: String,
+
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -104,6 +108,9 @@ impl<'a> TuiApp<'a> {
             password_input_show: false,
 
             table_state: TableState::default().with_selected(0),
+
+            show_popup: false,
+            popup_text: String::new(),
         }
     }
 
@@ -155,6 +162,26 @@ impl<'a> TuiApp<'a> {
             .highlight_style(Style::default().fg(Color::White).bg(Color::LightBlue))
             .select(current);
 
+        // render window and menu so we always having skeleton
+        frame.render_widget(menu, menu_rect);
+        frame.render_widget(window, content_rect);
+
+        if self.show_popup {
+            let popup = Paragraph::new(self.popup_text.clone())
+                .style(Style::default().fg(Color::Red))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Error")
+                        .style(Style::default().fg(Color::LightRed))
+                        .title_bottom("(Esc) Close"),
+                );
+
+            let popup_rect = self.centered_rect(95, 50, content_rect);
+            frame.render_widget(popup, popup_rect);
+            return;
+        }
+
         if self.current_state == CurrentState::InputMasterPassword {
             let centered_content_rect = self.centered_rect(25, 50, content_rect);
 
@@ -204,17 +231,12 @@ impl<'a> TuiApp<'a> {
         }
 
 
-        frame.render_widget(menu, menu_rect);
-        frame.render_widget(window, content_rect);
+        
     }
 
     fn handle_events(&mut self) -> Result<(), Error> {
         if event::poll(std::time::Duration::from_millis(16))? {
             if let Ok(crossterm::event::Event::Key(event)) = crossterm::event::read() {
-                if self.password_input_active {
-                    self.password_input.handle_event(&Event::Key(event));
-                }
-
                 if event.kind == crossterm::event::KeyEventKind::Press {
                     self.handle_key_event(event);
                 }
@@ -225,6 +247,18 @@ impl<'a> TuiApp<'a> {
     }
 
     fn handle_key_event(&mut self, event: crossterm::event::KeyEvent) {
+        if self.show_popup {
+            if event.code == crossterm::event::KeyCode::Esc {
+                self.show_popup = false;
+            }
+
+            return;
+        }
+
+        if self.password_input_active {
+            self.password_input.handle_event(&Event::Key(event));
+        }
+
         match event.code {
             crossterm::event::KeyCode::Enter => {
                 if self.current_state == CurrentState::InputMasterPassword {
@@ -239,6 +273,7 @@ impl<'a> TuiApp<'a> {
                     self.password_input_active = false;
                     self.current_state = CurrentState::View;
                     self.password_input.reset();
+
                 }
             }
 
@@ -269,7 +304,25 @@ impl<'a> TuiApp<'a> {
                 }
             }
 
+            crossterm::event::KeyCode::F(8) => {
+                self.popup("test");
+            }
+
             crossterm::event::KeyCode::Esc => {
+                if self.show_popup {
+                    self.show_popup = false;
+                    return;
+                }
+
+                // IDEA: esc to go back to previous state first?
+                // if self.current_state == CurrentState::InputMasterPassword {
+                //     self.exit();
+                // } else {
+                //     self.current_state = CurrentState::InputMasterPassword;
+                //     self.password_input_active = true;
+                //     return;
+                // }
+
                 self.exit();
             }
 
@@ -345,5 +398,10 @@ impl<'a> TuiApp<'a> {
             }
         }
         Ok(())
+    }
+
+    fn popup(&mut self, text: &str) {
+        self.show_popup = true;
+        self.popup_text = text.to_string();
     }
 }
