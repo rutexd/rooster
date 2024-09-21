@@ -18,7 +18,7 @@ use std::{
 
 use tui_input::{backend::crossterm::EventHandler, Input};
 
-use crate::{password::{self, v2::Password}, util};
+use crate::{password::{self}, util};
 use crate::{password::v2::PasswordStore, password_store};
 use crate::clip;
 
@@ -27,9 +27,11 @@ pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
 pub struct TuiApp<'a> {
     exit: bool,
-    pub current_state: CurrentState,
+    pub(crate) current_state: CurrentState,
     file: &'a mut File,
-    password_store: Option<password::v2::PasswordStore>,
+    file_data: SafeVec,
+
+    pub(crate) password_store: Option<password::v2::PasswordStore>,
 
     submenu: TabElement,
 
@@ -37,7 +39,7 @@ pub struct TuiApp<'a> {
     password_input_active: bool,
     password_input_show: bool,
 
-    table_state: TableState,
+    pub(crate) table_state: TableState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -93,6 +95,7 @@ impl<'a> TuiApp<'a> {
             current_state: CurrentState::InputMasterPassword,
             password_store: None,
             file: file,
+            file_data: SafeVec::new(Vec::new()),
 
             submenu: TabElement::default(),
 
@@ -106,11 +109,12 @@ impl<'a> TuiApp<'a> {
 
     pub fn run(&mut self, terminal: &mut Tui) -> Result<PasswordStore, Error> {
         while !self.exit {
-            self.preprocess_update()?;
+            self.update()?;
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events()?;
         }
-        self.on_exit();
+
+        // on exit { ... }
 
         match self.password_store.take() {
             Some(password_store) => Ok(password_store),
@@ -126,7 +130,6 @@ impl<'a> TuiApp<'a> {
         let rects = self.get_basic_rects(frame);
         let menu_rect = rects[0].clone();
         let content_rect = rects[1].clone();
-        let centered_content_rect = self.centered_rect(50, 50, content_rect);
 
         let view_instructions = [
             "(F2) Copy username",
@@ -153,6 +156,8 @@ impl<'a> TuiApp<'a> {
             .select(current);
 
         if self.current_state == CurrentState::InputMasterPassword {
+            let centered_content_rect = self.centered_rect(25, 50, content_rect);
+
             let scroll = self
                 .password_input
                 .visual_scroll(centered_content_rect.width as usize);
@@ -170,7 +175,8 @@ impl<'a> TuiApp<'a> {
                 Block::default()
                     .borders(Borders::ALL)
                     .title("Enter your master password")
-                    .style(Style::default().fg(Color::White)),
+                    .style(Style::default().fg(Color::White))
+                    ,
             )
             .scroll((0, scroll as u16));
 
@@ -184,14 +190,22 @@ impl<'a> TuiApp<'a> {
             }
 
             frame.render_widget(password_input, centered_content_rect);
+        } else {
+            match self.submenu {
+                TabElement::Start => {
+                    self.render_start_screen(frame);
+                },
+                TabElement::View => {
+                    self.render_view_tab(frame);
+                }
+                TabElement::Add => {},
+            }
+
         }
 
-        if self.submenu == TabElement::View {
-            self.render_passwords_table(frame);
-        }
 
-        frame.render_widget(window, content_rect);
         frame.render_widget(menu, menu_rect);
+        frame.render_widget(window, content_rect);
     }
 
     fn handle_events(&mut self) -> Result<(), Error> {
@@ -260,33 +274,48 @@ impl<'a> TuiApp<'a> {
             }
 
             crossterm::event::KeyCode::Left => {
-                if self.current_state == CurrentState::View {
-                    self.submenu = self.submenu.prev();
-                }
+                self.submenu = self.submenu.prev();
             }
 
             crossterm::event::KeyCode::Right => {
-                if self.current_state == CurrentState::View {
-                    self.submenu = self.submenu.next();
-                }
+                self.submenu = self.submenu.next();
             }
 
             crossterm::event::KeyCode::Up => {
-                if self.submenu == TabElement::View { // add out of bounds check
-                    self.table_state.select_previous();
+                match self.submenu {
+                    TabElement::View => {
+                        let total = self.password_store.as_ref().unwrap().get_all_passwords().len();
+                        let current = self.table_state.selected().unwrap();
+                        if current == 0 {
+                            self.table_state.select(Some(total - 1));
+                        } else {
+                            self.table_state.select_previous();
+                        }
+                    }
+                    _ => {}
                 }
             }
 
             crossterm::event::KeyCode::Down => {
-                if self.submenu == TabElement::View { // add out of bounds check
-                    self.table_state.select_next();
+                match self.submenu {
+                    TabElement::View => {
+                        let total = self.password_store.as_ref().unwrap().get_all_passwords().len();
+                        let current = self.table_state.selected().unwrap();
+                        if current == total - 1 {
+                            self.table_state.select(Some(0));
+                        } else {
+                            self.table_state.select_next();
+                        }
+                    }
+                    _ => {}
                 }
             }
             _ => {}
         }
     }
 
-    fn preprocess_update(&mut self) -> Result<(), Error> {
+    // called before render
+    fn update(&mut self) -> Result<(), Error> {
         Ok(())
     }
 
@@ -295,12 +324,9 @@ impl<'a> TuiApp<'a> {
         self.exit = true;
     }
 
-    fn on_exit(&self) {
-        println!("Exiting...");
-    }
 
     fn load_password_store(&mut self, master_password: &String) -> Result<(), Error> {
-        let input = match util::read_file(self.file) {
+        let input = match util::read_file(&mut self.file) {
             Ok(input) => input,
             Err(_) => return Err(Error::new(io::ErrorKind::Other, "Could not read file")),
         };
@@ -311,7 +337,7 @@ impl<'a> TuiApp<'a> {
             false,
         ) {
             Ok(store) => self.password_store = Some(store),
-            Err(_) => {
+            Err(e) => {
                 return Err(Error::new(
                     io::ErrorKind::Other,
                     "Could not load password store",
@@ -319,111 +345,5 @@ impl<'a> TuiApp<'a> {
             }
         }
         Ok(())
-    }
-
-    fn render_passwords_table(&self, frame: &mut Frame) {
-        let area = self.centered_rect(95, 90, frame.area());
-
-        let passwords = self.password_store.as_ref().unwrap().get_all_passwords();
-        const ITEM_HEIGHT: usize = 1;
-
-        // 30 test passwords
-        let passwords = vec![
-            Password::new("test1", "test1", "test1"),
-            Password::new("test2", "test2", "test2"),
-            Password::new("test3", "test3", "test3"),
-            Password::new("test4", "test4", "test4"),
-            Password::new("test5", "test5", "test5"),
-            Password::new("test6", "test6", "test6"),
-            Password::new("test7", "test7", "test7"),
-            Password::new("test8", "test8", "test8"),
-            Password::new("test9", "test9", "test9"),
-            Password::new("test10", "test10", "test10"),
-            Password::new("test11", "test11", "test11"),
-            Password::new("test12", "test12", "test12"),
-            Password::new("test13", "test13", "test13"),
-            Password::new("test14", "test14", "test14"),
-            Password::new("test15", "test15", "test15"),
-            Password::new("test16", "test16", "test16"),
-            Password::new("test17", "test17", "test17"),
-            Password::new("test18", "test18", "test18"),
-            Password::new("test19", "test19", "test19"),
-            Password::new("test20", "test20", "test20"),
-            Password::new("test21", "test21", "test21"),
-            Password::new("test22", "test22", "test22"),
-            Password::new("test23", "test23", "test23"),
-            Password::new("test24", "test24", "test24"),
-            Password::new("test25", "test25", "test25"),
-            Password::new("test26", "test26", "test26"),
-            Password::new("test27", "test27", "test27"),
-            Password::new("test28", "test28", "test28"),
-            Password::new("test29", "test29", "test29"),
-            Password::new("test30", "test30", "test30"),
-        ];
-
-        let header_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
-        let selected_style = Style::default()
-            .add_modifier(Modifier::REVERSED);
-
-        let header = ["App", "Username", "Password"]
-            .iter()
-            .map(|&s| Cell::from(Text::from(s)))
-            .collect::<Row>()
-            .style(header_style)
-            .height(1);
-        
-        
-        let rows = passwords.iter().enumerate().map(|(i, data)| {
-            [
-                data.name.as_str(),
-                data.username.as_str(),
-                data.password.as_str(),
-            ].iter()
-                .map(|content| Cell::from(Text::from(*content)))
-                .collect::<Row>()
-                .style(Style::new().fg(Color::Gray).bg(Color::Black))
-                .height(ITEM_HEIGHT as u16) // height example for the row
-        });
-
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Percentage(20),
-                Constraint::Percentage(30),
-                Constraint::Percentage(50),
-            ],
-        )
-        .header(header)
-        .highlight_style(selected_style)
-        .block(Block::default().padding(Padding {
-            top: 1,
-            right: 0,
-            bottom: 0,
-            left: 0,
-        }));
-        
-        let mut table_state = self.table_state.clone();
-        let mut scroll_state = ScrollbarState::new((passwords.len()-1) * ITEM_HEIGHT);
-
-
-        scroll_state = scroll_state.position(table_state.selected().unwrap() * ITEM_HEIGHT);
-
-        frame.render_stateful_widget(table, area, &mut table_state);
-        frame.render_stateful_widget(
-            Scrollbar::default().style(Style::default().fg(Color::Red))
-            .orientation(ScrollbarOrientation::VerticalRight)
-                .begin_symbol(None)
-                .end_symbol(None),
-            area.inner(Margin {
-                vertical: 1,
-                horizontal: 0,
-            }).offset(Offset {
-                x: 2,
-                y: 1,
-            }),
-            &mut scroll_state,
-        );
-        
-
     }
 }
