@@ -37,7 +37,7 @@ pub struct TuiApp<'a> {
 
     password_input: Input,
     password_input_active: bool,
-    password_input_show: bool,
+    pub(crate) show_passwords: bool,
 
     pub(crate) table_state: TableState,
 
@@ -105,7 +105,7 @@ impl<'a> TuiApp<'a> {
 
             password_input: Input::default(),
             password_input_active: true,
-            password_input_show: false,
+            show_passwords: false,
 
             table_state: TableState::default().with_selected(0),
 
@@ -139,6 +139,7 @@ impl<'a> TuiApp<'a> {
         let content_rect = rects[1].clone();
 
         let view_instructions = [
+            "(F1) Show/Hide password",
             "(F2) Copy username",
             "(F3) Copy password",
         ].join(" | ");
@@ -177,8 +178,8 @@ impl<'a> TuiApp<'a> {
                         .title_bottom("(Esc) Close"),
                 );
 
-            let popup_rect = self.centered_rect(95, 50, content_rect);
-            frame.render_widget(popup, popup_rect);
+            let area = self.centered_rect(95, 50, content_rect);
+            frame.render_widget(popup, area);
             return;
         }
 
@@ -194,7 +195,7 @@ impl<'a> TuiApp<'a> {
                 self.password_input
                     .value()
                     .chars()
-                    .map(|c| if self.password_input_show { c } else { '*' })
+                    .map(|c| if self.show_passwords { c } else { '*' })
                     .collect::<String>(),
             )
             .style(Style::default().fg(Color::Yellow))
@@ -278,7 +279,7 @@ impl<'a> TuiApp<'a> {
             }
 
             crossterm::event::KeyCode::F(1) => {
-                self.password_input_show = !self.password_input_show;
+                self.show_passwords = !self.show_passwords;
             }
 
             crossterm::event::KeyCode::F(2) => {

@@ -3,6 +3,7 @@ use std::rc::Rc;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Margin, Offset, Rect}, style::{Color, Modifier, Style}, text::Text, widgets::{Block, Cell, Padding, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table}, Frame
 };
+use rtoolbox::safe_string::SafeString;
 
 use crate::{gui::tui_app::TuiApp, password::v2::Password};
 
@@ -76,12 +77,17 @@ impl<'a> TuiApp<'a> {
         
         
         let rows = passwords.iter().enumerate().map(|(i, data)| {
+            let password = match self.show_passwords {
+                true => data.password.clone(),
+                false => SafeString::from_string(String::from("*").repeat(data.password.len())),
+            };
+
             [
-                data.name.as_str(),
-                data.username.as_str(),
-                data.password.as_str(),
+                data.name.clone(),
+                data.username.clone(),
+                password.to_string(),
             ].iter()
-                .map(|content| Cell::from(Text::from(*content)))
+                .map(|content| Cell::from(Text::from(content.clone())))
                 .collect::<Row>()
                 .style(Style::new().fg(Color::Gray).bg(Color::Black))
                 .height(TABLE_ITEM_HEIGHT as u16) // height of the row
