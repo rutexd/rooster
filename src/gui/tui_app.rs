@@ -5,7 +5,12 @@ use crossterm::{
 };
 
 use ratatui::{
-    layout::*, prelude::CrosstermBackend, style::*, text::{Span, Text}, widgets::*, Frame, Terminal,
+    layout::*,
+    prelude::CrosstermBackend,
+    style::*,
+    text::{Span, Text},
+    widgets::*,
+    Frame, Terminal,
 };
 
 use rtoolbox::{safe_string::SafeString, safe_vec::SafeVec};
@@ -14,15 +19,18 @@ use strum::{Display, EnumIter, FromRepr, IntoEnumIterator};
 use std::{
     fs::File,
     io::{self, stdout, Error, Stdout},
+    ptr::{null, null_mut},
 };
 
 use tui_input::{backend::crossterm::EventHandler, Input};
 
-use crate::{password::{self}, util};
-use crate::{password::v2::PasswordStore, password_store};
-use crate::gui::widgets::text_input::SimpleTextInput;
 use crate::clip;
-
+use crate::gui::widgets::text_input::SimpleTextInput;
+use crate::{password::v2::PasswordStore, password_store};
+use crate::{
+    password::{self},
+    util,
+};
 
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
@@ -30,21 +38,20 @@ pub struct TuiApp<'a> {
     exit: bool,
     pub(crate) current_state: CurrentState,
     file: &'a mut File,
-    file_data: SafeVec,
-
-    pub(crate) password_store: Option<password::v2::PasswordStore>,
 
     submenu: TabElement,
 
-    password_input: Input,
-    password_input_active: bool,
+    pub(crate) password_store: Option<password::v2::PasswordStore>,
+
+    pub(crate) inputs: [InputWrapper; 4],
+    pub(crate) current_active_input: Option<InputType>,
+
     pub(crate) show_passwords: bool,
 
     pub(crate) table_state: TableState,
 
     pub(crate) show_popup: bool,
     pub(crate) popup_text: String,
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -64,6 +71,29 @@ enum TabElement {
 
     #[strum(to_string = "Add")]
     Add,
+}
+
+
+#[derive(Clone, Copy, Display, FromRepr, EnumIter, PartialEq)]
+pub(crate) enum InputType {
+    MasterPasswordInput,
+    AddAppInput,
+    AddUsernameInput,
+    AddPasswordInput,
+}
+
+pub(crate) struct InputWrapper {
+    pub(crate) input: Input,
+    pub(crate) active: bool,
+}
+
+impl Default for InputWrapper {
+    fn default() -> Self {
+        Self {
+            input: Input::default(),
+            active: false,
+        }
+    }
 }
 
 impl TabElement {
@@ -93,29 +123,37 @@ impl<'a> TuiApp<'a> {
         Ok(())
     }
 
-    // pub fn new(password_store: &'a password::v2::PasswordStore) -> Self {
+    // pub fn new(password_store: & password::v2::PasswordStore) -> Self {
     pub fn new(file: &'a mut File) -> Self {
         Self {
             exit: false,
             current_state: CurrentState::InputMasterPassword,
             password_store: None,
-            file: file,
-            file_data: SafeVec::new(Vec::new()),
+            file,
 
             submenu: TabElement::default(),
 
-            password_input: Input::default(),
-            password_input_active: true,
+            
             show_passwords: false,
 
             table_state: TableState::default().with_selected(0),
 
             show_popup: false,
             popup_text: String::new(),
+
+            inputs: [InputWrapper::default(), InputWrapper::default(), InputWrapper::default(), InputWrapper::default()],
+
+            current_active_input: None,
         }
     }
 
+    fn prepare(&mut self) -> Result<(), Error> {
+        self.set_input_activate(InputType::MasterPasswordInput);
+        Ok(())
+    }
+
     pub fn run(&mut self, terminal: &mut Tui) -> Result<PasswordStore, Error> {
+        self.prepare()?;
         while !self.exit {
             self.update()?;
             terminal.draw(|frame| self.render_frame(frame))?;
@@ -140,10 +178,17 @@ impl<'a> TuiApp<'a> {
         let content_rect = rects[1].clone();
 
         let view_instructions = [
-            "(F1) Show/Hide password",
+            "(F1) Show/Hide passwords",
             "(F2) Copy username",
             "(F3) Copy password",
-        ].join(" | ");
+        ]
+        .join(" | ");
+
+        let add_instructions = [
+            "(F1) Show/Hide password",
+            "(arrow keys) change current active input",
+        ]
+        .join(" | ");
 
         let window = Block::new()
             .title("Rooster password manager")
@@ -152,8 +197,8 @@ impl<'a> TuiApp<'a> {
                 CurrentState::InputMasterPassword => "(F1) Show/Hide password",
                 CurrentState::View => match self.submenu {
                     TabElement::Start => "Instructions",
-                    TabElement::View => view_instructions.as_str(),
-                    _ => "TODO",
+                    TabElement::View => &view_instructions,
+                    TabElement::Add => &add_instructions,
                 },
             });
 
@@ -185,40 +230,19 @@ impl<'a> TuiApp<'a> {
         }
 
         if self.current_state == CurrentState::InputMasterPassword {
-            let centered_content_rect = self.centered_rect(25, 50, content_rect);
-
-            let width = centered_content_rect.width as usize;
-            let password_input = SimpleTextInput::new(
-                "Enter your master password",
-                &self.password_input,
-                self.show_passwords,
-            );
-
-            if self.password_input_active { // TODO somehow incapsulate this into widget
-                frame.set_cursor_position((
-                    centered_content_rect.x
-                        + 1
-                        + (self.password_input.visual_cursor().min(width - 2)) as u16,
-                    centered_content_rect.y + 1,
-                ));
-            }
-
-            frame.render_widget(password_input, centered_content_rect);
-        } else {
-            match self.submenu {
-                TabElement::Start => {
-                    self.render_start_screen(frame);
-                },
-                TabElement::View => {
-                    self.render_view_tab(frame);
-                }
-                TabElement::Add => {},
-            }
-
+            self.render_master_password_input(frame, content_rect);
+            return;
         }
 
+        self.render_tabs(frame);
+    }
 
-        
+    fn render_tabs(& self, frame: &mut Frame) {
+        match self.submenu {
+            TabElement::Start => self.render_start_screen(frame),
+            TabElement::View => self.render_view_tab(frame),
+            TabElement::Add => self.render_add_tab(frame),
+        }
     }
 
     fn handle_events(&mut self) -> Result<(), Error> {
@@ -234,35 +258,75 @@ impl<'a> TuiApp<'a> {
     }
 
     fn handle_key_event(&mut self, event: crossterm::event::KeyEvent) {
-        if self.show_popup {
-            if event.code == crossterm::event::KeyCode::Esc {
-                self.show_popup = false;
+        match self.current_active_input {
+            Some(index) => {
+                self.inputs[index as usize].input.handle_event(&Event::Key(event));
+                
+                if event.code == crossterm::event::KeyCode::Esc || event.code == crossterm::event::KeyCode::Enter {
+                    self.deactivate_input();
+                }
+
+
+                // the keys are allowed to pass to the next handler, FIXME this is a bit hacky
+                if  event.code != crossterm::event::KeyCode::Enter && 
+                    event.code != crossterm::event::KeyCode::Up && 
+                    event.code != crossterm::event::KeyCode::Down &&
+                    event.code != crossterm::event::KeyCode::F(1)    
+                {
+                    return;
+                }
+
+                
             }
-
-            return;
-        }
-
-        if self.password_input_active {
-            self.password_input.handle_event(&Event::Key(event));
+            None => {}
         }
 
         match event.code {
             crossterm::event::KeyCode::Enter => {
                 if self.current_state == CurrentState::InputMasterPassword {
-                    // TODO: better way to handle this
-                    let master_password = self.password_input.value().into();
+                    let master_password = self.inputs[InputType::MasterPasswordInput as usize].input.value().into();
 
-                    // TODO: fix invalid -> valid read (prob something being consumed?)
+                    // TODO fix invalid -> valid read (prob something being consumed?)
                     if let Err(_) = self.load_password_store(&master_password) {
                         return; // TODO: handle error
                     }
 
-                    self.password_input_active = false;
                     self.current_state = CurrentState::View;
-                    self.password_input.reset();
+                    return;
+                }
 
+                // TODO adapt commands handlers to share code
+                if self.submenu == TabElement::Add {
+                    let app = self.inputs[InputType::AddAppInput as usize].input.value().to_string();
+                    let username = self.inputs[InputType::AddUsernameInput as usize].input.value().to_string();
+                    let password = self.inputs[InputType::AddPasswordInput as usize].input.value().to_string();
+
+                    let password_store = self.password_store.as_mut().unwrap();
+
+
+                    if password_store.has_password(&app) {
+                        self.popup("App already exists");
+                        return;
+                    }
+
+                    let password = password::v2::Password::new(app, username, password);
+
+                    match password_store.add_password(password) {
+                        Ok(_) => {
+                            self.clear_input(InputType::AddAppInput);
+                            self.clear_input(InputType::AddUsernameInput);
+                            self.clear_input(InputType::AddPasswordInput);
+
+                            self.submenu = TabElement::View;
+                        }
+                        Err(err) => {
+                            self.popup(&format!("Error: {:?}", err));
+                        }
+                    }
                 }
             }
+
+
 
             crossterm::event::KeyCode::F(1) => {
                 self.show_passwords = !self.show_passwords;
@@ -270,11 +334,12 @@ impl<'a> TuiApp<'a> {
 
             crossterm::event::KeyCode::F(2) => {
                 if self.submenu == TabElement::View {
-                
                     let index = self.table_state.selected().unwrap();
-                    let username = self.password_store.as_ref().unwrap().get_all_passwords()[index].clone().username;
+                    let username = self.password_store.as_ref().unwrap().get_all_passwords()[index]
+                        .clone()
+                        .username;
                     match clip::copy_to_clipboard(&SafeString::from_string(username.to_string())) {
-                        Ok(_) => {} 
+                        Ok(_) => {}
                         Err(_) => {} // TODO: handle error (show popup?)
                     }
                 }
@@ -283,9 +348,11 @@ impl<'a> TuiApp<'a> {
             crossterm::event::KeyCode::F(3) => {
                 if self.submenu == TabElement::View {
                     let index = self.table_state.selected().unwrap();
-                    let password = self.password_store.as_ref().unwrap().get_all_passwords()[index].clone().password;
+                    let password = self.password_store.as_ref().unwrap().get_all_passwords()[index]
+                        .clone()
+                        .password;
                     match clip::copy_to_clipboard(&password) {
-                        Ok(_) => {} 
+                        Ok(_) => {}
                         Err(_) => {} // TODO: handle error (show popup?)
                     }
                 }
@@ -324,13 +391,42 @@ impl<'a> TuiApp<'a> {
             crossterm::event::KeyCode::Up => {
                 match self.submenu {
                     TabElement::View => {
-                        let total = self.password_store.as_ref().unwrap().get_all_passwords().len();
+                        let total = self
+                            .password_store
+                            .as_ref()
+                            .unwrap()
+                            .get_all_passwords()
+                            .len();
                         let current = self.table_state.selected().unwrap();
                         if current == 0 {
                             self.table_state.select(Some(total - 1));
                         } else {
                             self.table_state.select_previous();
                         }
+                    }
+
+                    TabElement::Add => {
+                        // deactivate current input and activate previous. if current is first, activate last.
+                        // if current is none, activate first
+
+                        match self.current_active_input {
+                            Some(index) => {
+                                let prev = match index {
+                                    InputType::AddAppInput => InputType::AddPasswordInput,
+                                    InputType::AddUsernameInput => InputType::AddAppInput,
+                                    InputType::AddPasswordInput => InputType::AddUsernameInput,
+                                    _ => unreachable!(),
+                                };
+
+                                self.deactivate_input();
+                                self.set_input_activate(prev);
+                            }
+                            None => {
+                                self.set_input_activate(InputType::AddPasswordInput);
+                            }
+                        }
+
+                       
                     }
                     _ => {}
                 }
@@ -339,13 +435,41 @@ impl<'a> TuiApp<'a> {
             crossterm::event::KeyCode::Down => {
                 match self.submenu {
                     TabElement::View => {
-                        let total = self.password_store.as_ref().unwrap().get_all_passwords().len();
+                        let total = self
+                            .password_store
+                            .as_ref()
+                            .unwrap()
+                            .get_all_passwords()
+                            .len();
                         let current = self.table_state.selected().unwrap();
                         if current == total - 1 {
                             self.table_state.select(Some(0));
                         } else {
                             self.table_state.select_next();
                         }
+                    }
+                    TabElement::Add => {
+                        // deactivate current input and activate next. if current is last, activate first.
+                        // if current is none, activate first
+
+                        match self.current_active_input {
+                            Some(index) => {
+                                let next = match index {
+                                    InputType::AddAppInput => InputType::AddUsernameInput,
+                                    InputType::AddUsernameInput => InputType::AddPasswordInput,
+                                    InputType::AddPasswordInput => InputType::AddAppInput,
+                                    _ => unreachable!(),
+                                };
+
+                                self.deactivate_input();
+                                self.set_input_activate(next);
+                            }
+                            None => {
+                                self.set_input_activate(InputType::AddAppInput);
+                            }
+                        }
+                        
+
                     }
                     _ => {}
                 }
@@ -354,16 +478,46 @@ impl<'a> TuiApp<'a> {
         }
     }
 
+    pub(crate) fn set_input_activate(&mut self, input: InputType) {
+        self.inputs[input as usize].active = true;
+        self.current_active_input = Some(input);
+    }
+
+    fn _deactivate_input(&mut self, reset: bool){
+        match self.current_active_input {
+            Some(index) => {
+                if reset {
+                    self.inputs[index as usize].input.reset();
+                }
+                self.inputs[index as usize].active = false;
+                self.current_active_input = None;
+            }
+            None => {}
+        }
+    }
+
+    pub(crate) fn clear_input(&mut self, input: InputType) {
+        self.inputs[input as usize].input.reset();
+    }
+
+    pub(crate) fn deactivate_input(&mut self) {
+        self._deactivate_input(false);
+    }
+
+    pub(crate) fn deactivate_input_and_reset(&mut self) {
+        self._deactivate_input(true);
+    }
+
+
+
     // called before render
     fn update(&mut self) -> Result<(), Error> {
         Ok(())
     }
 
-
     fn exit(&mut self) {
         self.exit = true;
     }
-
 
     fn load_password_store(&mut self, master_password: &String) -> Result<(), Error> {
         let input = match util::read_file(&mut self.file) {

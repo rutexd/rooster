@@ -5,7 +5,7 @@ use tui_input::Input;
 
 pub(crate) struct SimpleTextInput<'a> {
     input: &'a Input,
-    show_passwords: bool,
+    hide: bool,
     title: &'a str,
     
 }
@@ -13,10 +13,10 @@ pub(crate) struct SimpleTextInput<'a> {
 
 
 impl <'a> SimpleTextInput<'a> {
-    pub fn new(title: &'a str, input: &'a Input, show_passwords: bool) -> Self {
+    pub fn new(title: &'a str, input: &'a Input, hide: bool) -> Self {
         Self {
             input,
-            show_passwords,
+            hide,
             title,
         }
     }
@@ -32,7 +32,7 @@ impl<'a> Widget for SimpleTextInput<'a> {
             .input
             .value()
             .chars()
-            .map(|c| if self.show_passwords { c } else { '*' })
+            .map(|c| if self.hide { '*' } else { c })
             .collect::<String>();
 
         let password_input = Paragraph::new(password_text)
