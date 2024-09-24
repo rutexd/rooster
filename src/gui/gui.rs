@@ -118,6 +118,28 @@ impl<'a> TuiApp<'a> {
         // passwords.push(Password::new(format!("test{}", i), format!("test{}", i), format!("test{}", i)));
         // }
 
+        if passwords.len() == 0 {
+            let text = vec![Text::styled(
+                "No passwords found",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )];
+
+            frame.render_widget(
+                Table::new(
+                    text.iter()
+                        .map(|t| Row::new(vec![Cell::from(t.clone())]).height(1)),
+                    vec![Constraint::Percentage(100)],
+                ),
+                area.inner(Margin {
+                    vertical: 1,
+                    horizontal: 1,
+                }),
+            );
+            return;
+        }
+
         let header_style = Style::default()
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD);
@@ -168,7 +190,10 @@ impl<'a> TuiApp<'a> {
         let mut table_state = self.table_state.clone();
         let mut scroll_state = ScrollbarState::new((passwords.len() - 1) * TABLE_ITEM_HEIGHT);
 
-        scroll_state = scroll_state.position(table_state.selected().unwrap() * TABLE_ITEM_HEIGHT);
+        scroll_state = scroll_state.position(match table_state.selected() {
+            Some(i) => i * TABLE_ITEM_HEIGHT,
+            None => 0,
+        });
 
         frame.render_stateful_widget(table, area, &mut table_state);
         frame.render_stateful_widget(

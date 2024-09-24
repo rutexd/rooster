@@ -434,11 +434,23 @@ impl<'a> TuiApp<'a> {
                             .unwrap()
                             .get_all_passwords()
                             .len();
-                        let current = self.table_state.selected().unwrap();
-                        if current == 0 {
-                            self.table_state.select(Some(total - 1));
-                        } else {
-                            self.table_state.select_previous();
+                        if total == 0 {
+                            return;
+                        }
+
+                        match self.table_state.selected() {
+                            Some(index) => {
+                                let prev = if index == 0 {
+                                    total - 1
+                                } else {
+                                    index - 1
+                                };
+
+                                self.table_state.select(Some(prev));
+                            }
+                            None => {
+                                self.table_state.select(Some(total - 1));
+                            }
                         }
                     }
 
@@ -476,11 +488,23 @@ impl<'a> TuiApp<'a> {
                             .unwrap()
                             .get_all_passwords()
                             .len();
-                        let current = self.table_state.selected().unwrap();
-                        if current == total - 1 {
-                            self.table_state.select(Some(0));
-                        } else {
-                            self.table_state.select_next();
+                        if total == 0 {
+                            return;
+                        }
+
+                        match self.table_state.selected() {
+                            Some(index) => {
+                                let next = if index == total - 1 {
+                                    0
+                                } else {
+                                    index + 1
+                                };
+
+                                self.table_state.select(Some(next));
+                            }
+                            None => {
+                                self.table_state.select(Some(0));
+                            }
                         }
                     }
                     TabElement::Add => {
@@ -519,7 +543,11 @@ impl<'a> TuiApp<'a> {
                         return;
                     }
 
-                    let current_selected_index = self.table_state.selected().unwrap();
+                    let current_selected_index = match self.table_state.selected() {
+                        Some(index) => index,
+                        None => return,
+                    };
+
                     let total = self.password_store.as_ref().unwrap().get_all_passwords().len();
 
 
@@ -535,7 +563,7 @@ impl<'a> TuiApp<'a> {
                     }
 
                     // update selected index
-                    self.table_state.select(if total - 1 == 0 { None } else { Some(current_selected_index - 1) });
+                    self.table_state.select(if total - 1 == 0 { None } else { Some(if current_selected_index == 0 { 0 } else { current_selected_index - 1 }) });
 
                     
                 }
