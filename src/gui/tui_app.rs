@@ -1,31 +1,22 @@
 use crossterm::{
-    event::{self, Event},
+    event::{self, Event, ModifierKeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use ratatui::{
-    layout::*,
-    prelude::CrosstermBackend,
-    style::*,
-    text::{Span, Text},
-    widgets::*,
-    Frame, Terminal,
-};
+use ratatui::{prelude::CrosstermBackend, style::*, text::Span, widgets::*, Frame, Terminal};
 
-use rtoolbox::{safe_string::SafeString, safe_vec::SafeVec};
+use rtoolbox::safe_string::SafeString;
 use strum::{Display, EnumIter, FromRepr, IntoEnumIterator};
 
 use std::{
     fs::File,
     io::{self, stdout, Error, Stdout},
-    ptr::{null, null_mut},
 };
 
 use tui_input::{backend::crossterm::EventHandler, Input};
 
 use crate::clip;
-use crate::gui::widgets::text_input::SimpleTextInput;
 use crate::{password::v2::PasswordStore, password_store};
 use crate::{
     password::{self},
@@ -73,8 +64,8 @@ enum TabElement {
     Add,
 }
 
-
-#[derive(Clone, Copy, Display, FromRepr, EnumIter, PartialEq)]
+/// enum that represents all possible inputs in the app. casting to usize should give correct index of a inputs array
+#[derive(Clone, Copy, Display, PartialEq)]
 pub(crate) enum InputType {
     MasterPasswordInput,
     AddAppInput,
@@ -110,6 +101,25 @@ impl TabElement {
     }
 }
 
+impl std::ops::Index<InputType> for [InputWrapper] {
+    type Output = InputWrapper;
+
+    fn index(&self, index: InputType) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl std::ops::IndexMut<InputType> for [InputWrapper] {
+    fn index_mut(&mut self, index: InputType) -> &mut Self::Output {
+        &mut self[index as usize]
+    }
+}
+
+// same for tab element
+
+
+
+
 impl<'a> TuiApp<'a> {
     pub fn initialize() -> io::Result<Tui> {
         execute!(stdout(), EnterAlternateScreen)?;
@@ -133,7 +143,6 @@ impl<'a> TuiApp<'a> {
 
             submenu: TabElement::default(),
 
-            
             show_passwords: false,
 
             table_state: TableState::default().with_selected(0),
@@ -141,7 +150,12 @@ impl<'a> TuiApp<'a> {
             show_popup: false,
             popup_text: String::new(),
 
-            inputs: [InputWrapper::default(), InputWrapper::default(), InputWrapper::default(), InputWrapper::default()],
+            inputs: [
+                InputWrapper::default(),
+                InputWrapper::default(),
+                InputWrapper::default(),
+                InputWrapper::default(),
+            ],
 
             current_active_input: None,
         }
@@ -181,6 +195,7 @@ impl<'a> TuiApp<'a> {
             "(F1) Show/Hide passwords",
             "(F2) Copy username",
             "(F3) Copy password",
+            "(CTRL + SHIFT + Del) Delete password",
         ]
         .join(" | ");
 
@@ -237,7 +252,7 @@ impl<'a> TuiApp<'a> {
         self.render_tabs(frame);
     }
 
-    fn render_tabs(& self, frame: &mut Frame) {
+    fn render_tabs(&self, frame: &mut Frame) {
         match self.submenu {
             TabElement::Start => self.render_start_screen(frame),
             TabElement::View => self.render_view_tab(frame),
@@ -260,23 +275,36 @@ impl<'a> TuiApp<'a> {
     fn handle_key_event(&mut self, event: crossterm::event::KeyEvent) {
         match self.current_active_input {
             Some(index) => {
-                self.inputs[index as usize].input.handle_event(&Event::Key(event));
-                
-                if event.code == crossterm::event::KeyCode::Esc || event.code == crossterm::event::KeyCode::Enter {
+                // so we can always exit
+                if event.modifiers == crossterm::event::KeyModifiers::CONTROL {
+                    match event.code {
+                        crossterm::event::KeyCode::Char('c') => {
+                            self.exit();
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+
+
+                self.inputs[index]
+                    .input
+                    .handle_event(&Event::Key(event));
+
+                if event.code == crossterm::event::KeyCode::Esc
+                    || event.code == crossterm::event::KeyCode::Enter
+                {
                     self.deactivate_input();
                 }
 
-
                 // the keys are allowed to pass to the next handler, FIXME this is a bit hacky
-                if  event.code != crossterm::event::KeyCode::Enter && 
-                    event.code != crossterm::event::KeyCode::Up && 
-                    event.code != crossterm::event::KeyCode::Down &&
-                    event.code != crossterm::event::KeyCode::F(1)    
+                if event.code != crossterm::event::KeyCode::Enter
+                    && event.code != crossterm::event::KeyCode::Up
+                    && event.code != crossterm::event::KeyCode::Down
+                    && event.code != crossterm::event::KeyCode::F(1)
                 {
                     return;
                 }
-
-                
             }
             None => {}
         }
@@ -284,7 +312,10 @@ impl<'a> TuiApp<'a> {
         match event.code {
             crossterm::event::KeyCode::Enter => {
                 if self.current_state == CurrentState::InputMasterPassword {
-                    let master_password = self.inputs[InputType::MasterPasswordInput as usize].input.value().into();
+                    let master_password = self.inputs[InputType::MasterPasswordInput]
+                        .input
+                        .value()
+                        .into();
 
                     // TODO fix invalid -> valid read (prob something being consumed?)
                     if let Err(_) = self.load_password_store(&master_password) {
@@ -297,15 +328,23 @@ impl<'a> TuiApp<'a> {
 
                 // TODO adapt commands handlers to share code
                 if self.submenu == TabElement::Add {
-                    let app = self.inputs[InputType::AddAppInput as usize].input.value().to_string();
-                    let username = self.inputs[InputType::AddUsernameInput as usize].input.value().to_string();
-                    let password = self.inputs[InputType::AddPasswordInput as usize].input.value().to_string();
+                    let app = self.inputs[InputType::AddAppInput]
+                        .input
+                        .value()
+                        .to_string();
+                    let username = self.inputs[InputType::AddUsernameInput]
+                        .input
+                        .value()
+                        .to_string();
+                    let password = self.inputs[InputType::AddPasswordInput]
+                        .input
+                        .value()
+                        .to_string();
 
                     let password_store = self.password_store.as_mut().unwrap();
 
-
                     if password_store.has_password(&app) {
-                        self.popup("App already exists");
+                        self.popup("App with that name already exists.");
                         return;
                     }
 
@@ -325,8 +364,6 @@ impl<'a> TuiApp<'a> {
                     }
                 }
             }
-
-
 
             crossterm::event::KeyCode::F(1) => {
                 self.show_passwords = !self.show_passwords;
@@ -425,8 +462,6 @@ impl<'a> TuiApp<'a> {
                                 self.set_input_activate(InputType::AddPasswordInput);
                             }
                         }
-
-                       
                     }
                     _ => {}
                 }
@@ -468,10 +503,41 @@ impl<'a> TuiApp<'a> {
                                 self.set_input_activate(InputType::AddAppInput);
                             }
                         }
-                        
-
                     }
                     _ => {}
+                }
+            }
+
+            crossterm::event::KeyCode::Delete => {
+                if self.submenu == TabElement::View {
+                    // ensure user is pressed ctrl shift del. 
+                    let modifiers_pressed = event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                        && event.modifiers.contains(crossterm::event::KeyModifiers::SHIFT);
+
+                    if !modifiers_pressed {
+                        self.popup("Press CTRL + SHIFT + Del to delete password");
+                        return;
+                    }
+
+                    let current_selected_index = self.table_state.selected().unwrap();
+                    let total = self.password_store.as_ref().unwrap().get_all_passwords().len();
+
+
+                    // TODO: split command for password deletion
+                    let index = self.table_state.selected().unwrap();
+                    let password_name = self.password_store.as_ref().unwrap().get_all_passwords()[index].name.clone();
+
+                    match self.password_store.as_mut().unwrap().delete_password(&password_name) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            self.popup(&format!("Failed to delete password: {:?}", e));
+                        }
+                    }
+
+                    // update selected index
+                    self.table_state.select(if total - 1 == 0 { None } else { Some(current_selected_index - 1) });
+
+                    
                 }
             }
             _ => {}
@@ -479,17 +545,17 @@ impl<'a> TuiApp<'a> {
     }
 
     pub(crate) fn set_input_activate(&mut self, input: InputType) {
-        self.inputs[input as usize].active = true;
+        self.inputs[input].active = true;
         self.current_active_input = Some(input);
     }
 
-    fn _deactivate_input(&mut self, reset: bool){
+    fn _deactivate_input(&mut self, reset: bool) {
         match self.current_active_input {
             Some(index) => {
                 if reset {
-                    self.inputs[index as usize].input.reset();
+                    self.inputs[index].input.reset();
                 }
-                self.inputs[index as usize].active = false;
+                self.inputs[index].active = false;
                 self.current_active_input = None;
             }
             None => {}
@@ -497,7 +563,7 @@ impl<'a> TuiApp<'a> {
     }
 
     pub(crate) fn clear_input(&mut self, input: InputType) {
-        self.inputs[input as usize].input.reset();
+        self.inputs[input].input.reset();
     }
 
     pub(crate) fn deactivate_input(&mut self) {
@@ -507,8 +573,6 @@ impl<'a> TuiApp<'a> {
     pub(crate) fn deactivate_input_and_reset(&mut self) {
         self._deactivate_input(true);
     }
-
-
 
     // called before render
     fn update(&mut self) -> Result<(), Error> {

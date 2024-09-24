@@ -21,7 +21,7 @@ impl<'a> TuiApp<'a> {
 
         let width = centered_content_rect.width as usize;
         
-        let input = &self.inputs[InputType::MasterPasswordInput as usize];
+        let input = &self.inputs[InputType::MasterPasswordInput];
     
         let password_input = SimpleTextInput::new(
             "Enter your master password",
@@ -197,19 +197,19 @@ impl<'a> TuiApp<'a> {
         
         let app_input = SimpleTextInput::new(
             "App",
-            &self.inputs[InputType::AddAppInput as usize].input,
+            &self.inputs[InputType::AddAppInput].input,
             false,
         );
 
         let username_input = SimpleTextInput::new(
             "Username",
-            &self.inputs[InputType::AddUsernameInput as usize].input,
+            &self.inputs[InputType::AddUsernameInput].input,
             false,
         );
 
         let password_input = SimpleTextInput::new(
             "Password",
-            &self.inputs[InputType::AddPasswordInput as usize].input,
+            &self.inputs[InputType::AddPasswordInput].input,
             !self.show_passwords,
         );
 
@@ -231,18 +231,15 @@ impl<'a> TuiApp<'a> {
         frame.render_widget(p, layouts[4]);
       
         
-        if self.inputs[InputType::AddAppInput as usize].active {
-            let width = layouts[1].width as usize;
-            self.set_cursor(layouts[1].x, layouts[1].y, width, &self.inputs[InputType::AddAppInput as usize].input, frame);
+        if self.inputs[InputType::AddAppInput].active {
+            self.set_cursor(layouts[1].x, layouts[1].y, layouts[1].width as usize, &self.inputs[InputType::AddAppInput].input, frame);
         }
-        if self.inputs[InputType::AddUsernameInput as usize].active {
-            let width = layouts[2].width as usize;
-            self.set_cursor(layouts[2].x, layouts[2].y, width, &self.inputs[InputType::AddUsernameInput as usize].input, frame);
+        if self.inputs[InputType::AddUsernameInput].active {
+            self.set_cursor(layouts[2].x, layouts[2].y, layouts[2].width as usize, &self.inputs[InputType::AddUsernameInput].input, frame);
         }
 
-        if self.inputs[InputType::AddPasswordInput as usize].active {
-            let width = layouts[3].width as usize;
-            self.set_cursor(layouts[3].x, layouts[3].y, width, &self.inputs[InputType::AddPasswordInput as usize].input, frame);
+        if self.inputs[InputType::AddPasswordInput].active {
+            self.set_cursor(layouts[3].x, layouts[3].y, layouts[3].width as usize, &self.inputs[InputType::AddPasswordInput].input, frame);
         }
         
     }
