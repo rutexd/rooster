@@ -75,6 +75,7 @@ pub(crate) enum InputType {
 pub(crate) struct InputWrapper {
     pub(crate) input: Input,
     pub(crate) active: bool,
+    pub(crate) disable_after_enter: bool,
 }
 
 impl Default for InputWrapper {
@@ -82,6 +83,7 @@ impl Default for InputWrapper {
         Self {
             input: Input::default(),
             active: false,
+            disable_after_enter: true,
         }
     }
 }
@@ -150,10 +152,10 @@ impl<'a> TuiApp<'a> {
             popup_text: String::new(),
 
             inputs: [
-                InputWrapper::default(),
-                InputWrapper::default(),
-                InputWrapper::default(),
-                InputWrapper::default(),
+                InputWrapper::default(), // master password
+                InputWrapper::default(), // add app
+                InputWrapper::default(), // add username
+                InputWrapper::default(), // add password
             ],
 
             current_active_input: None,
@@ -162,6 +164,7 @@ impl<'a> TuiApp<'a> {
 
     fn prepare(&mut self) -> Result<(), Error> {
         self.set_input_activate(InputType::MasterPasswordInput);
+        self.inputs[InputType::MasterPasswordInput].disable_after_enter = false;
         Ok(())
     }
 
@@ -270,6 +273,12 @@ impl<'a> TuiApp<'a> {
     }
 
     fn handle_key_event(&mut self, event: crossterm::event::KeyEvent) {
+        
+        if event.code == crossterm::event::KeyCode::Esc && self.show_popup {
+            self.show_popup = false;
+            return;
+        }
+
         match self.current_active_input {
             Some(index) => {
                 // so we can always exit
@@ -282,13 +291,14 @@ impl<'a> TuiApp<'a> {
                     }
                 }
 
-
                 self.inputs[index]
                     .input
                     .handle_event(&Event::Key(event));
 
-                if event.code == crossterm::event::KeyCode::Esc
-                    || event.code == crossterm::event::KeyCode::Enter
+                if (event.code == crossterm::event::KeyCode::Esc
+                    || event.code == crossterm::event::KeyCode::Enter 
+                ) && self.inputs[index].disable_after_enter 
+
                 {
                     self.deactivate_input();
                 }
@@ -320,6 +330,8 @@ impl<'a> TuiApp<'a> {
 
                     self.current_state = CurrentState::View;
                     self.show_passwords = false;
+                    self.deactivate_input_and_reset();
+
                     return;
                 }
 
@@ -396,11 +408,6 @@ impl<'a> TuiApp<'a> {
             }
 
             crossterm::event::KeyCode::Esc => {
-                if self.show_popup {
-                    self.show_popup = false;
-                    return;
-                }
-
                 // IDEA: esc to go back to previous state first?
                 // if self.current_state == CurrentState::InputMasterPassword {
                 //     self.exit();
