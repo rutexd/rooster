@@ -10,8 +10,7 @@ use rtoolbox::safe_string::SafeString;
 use strum::{Display, EnumIter, FromRepr, IntoEnumIterator};
 
 use std::{
-    fs::File,
-    io::{self, stdout, Error, Stdout},
+    borrow::Borrow, fs::File, io::{self, stdout, Error, Stdout}
 };
 
 use tui_input::{backend::crossterm::EventHandler, Input};
@@ -240,13 +239,11 @@ impl<'a> TuiApp<'a> {
                 );
 
             let area = self.centered_rect(95, 50, content_rect);
-            frame.render_widget(popup, area);
-            return;
+            return frame.render_widget(popup, area);
         }
 
         if self.current_state == CurrentState::InputMasterPassword {
-            self.render_master_password_input(frame, content_rect);
-            return;
+            return self.render_master_password_input(frame, content_rect);
         }
 
         self.render_tabs(frame);
@@ -279,8 +276,7 @@ impl<'a> TuiApp<'a> {
                 if event.modifiers == crossterm::event::KeyModifiers::CONTROL {
                     match event.code {
                         crossterm::event::KeyCode::Char('c') => {
-                            self.exit();
-                            return;
+                            return self.exit();
                         }
                         _ => {}
                     }
@@ -318,11 +314,12 @@ impl<'a> TuiApp<'a> {
                         .into();
 
                     // TODO fix invalid -> valid read (prob something being consumed?)
-                    if let Err(_) = self.load_password_store(&master_password) {
-                        return; // TODO: handle error
+                    if let Err(err) = self.load_password_store(&master_password) {
+                        return self.popup(&format!("Failed to load password store: {:?}", err));
                     }
 
                     self.current_state = CurrentState::View;
+                    self.show_passwords = false;
                     return;
                 }
 
@@ -344,8 +341,7 @@ impl<'a> TuiApp<'a> {
                     let password_store = self.password_store.as_mut().unwrap();
 
                     if password_store.has_password(&app) {
-                        self.popup("App with that name already exists.");
-                        return;
+                        return self.popup("App with that name already exists.");
                     }
 
                     let password = password::v2::Password::new(app, username, password);
@@ -539,8 +535,7 @@ impl<'a> TuiApp<'a> {
                         && event.modifiers.contains(crossterm::event::KeyModifiers::SHIFT);
 
                     if !modifiers_pressed {
-                        self.popup("Press CTRL + SHIFT + Del to delete password");
-                        return;
+                        return self.popup("Press CTRL + SHIFT + Del to delete password");
                     }
 
                     let current_selected_index = match self.table_state.selected() {
@@ -626,7 +621,7 @@ impl<'a> TuiApp<'a> {
             Err(e) => {
                 return Err(Error::new(
                     io::ErrorKind::Other,
-                    "Could not load password store",
+                    format!("{:?}", e),
                 ))
             }
         }
